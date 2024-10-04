@@ -1,4 +1,4 @@
-### Power Automate Search
+#### Power Automate Search
 
 This is a really basic tool created on a whim to help out my company team and hopefully many others.
 

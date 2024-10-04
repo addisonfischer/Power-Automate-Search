@@ -10,6 +10,7 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Tooling.Connector;
 using Microsoft.Xrm.Sdk.Discovery;
 using Microsoft.Crm.Sdk.Messages;
+using System.Linq;
 
 namespace paSearch
 {
@@ -25,7 +26,7 @@ namespace paSearch
 
 		private void MyPluginControl_Load(object sender, EventArgs e)
 		{
-			ShowInfoNotification("Please feel free to check out the repo and suggest features or contribute!", new Uri("https://github.com/MscrmTools/XrmToolBox"));
+			ShowInfoNotification("Please feel free to check out the repo and suggest features or contribute!", new Uri("https://github.com/addisonfischer/Power-Automate-Search"));
 
 			if (!SettingsManager.Instance.TryLoad(GetType(), out mySettings))
 			{
@@ -92,6 +93,14 @@ namespace paSearch
 
 		}
 
+		public class CombinedResult
+		{
+			public string WorkflowName { get; set; }
+			public string WorkflowId { get; set; }
+			public string SolutionId { get; set; }
+			public string SolutionFriendlyName { get; set; }
+		}
+
 		private void paSearchFunction(string searchText, int selectedCategory)
 		{
 			WorkAsync(new WorkAsyncInfo
@@ -102,30 +111,93 @@ namespace paSearch
 				{
 					try
 					{
-						var paSearchResults = new List<Entity>(); // Assuming paSearchResults is a List<Entity>
+						var paSearchResults = new List<Entity>(); // List to store the search results
 
-						QueryExpression query = new QueryExpression("workflow")
+						// First Query: Query workflows (Power Automates)
+						QueryExpression workflowQuery = new QueryExpression("workflow")
 						{
-							ColumnSet = new ColumnSet("workflowid", "name", "solutionid", "clientdata"),
+							ColumnSet = new ColumnSet("workflowid", "name", "clientdata"),
 							Criteria = new FilterExpression()
 						};
 
 						if (selectedCategory != -1)
 						{
-							query.Criteria.AddCondition("category", ConditionOperator.Equal, selectedCategory);
+							workflowQuery.Criteria.AddCondition("category", ConditionOperator.Equal, selectedCategory);
 						}
 
-						EntityCollection paObjects = Service.RetrieveMultiple(query);
+						EntityCollection paObjects = Service.RetrieveMultiple(workflowQuery);
 
+						// For each workflow, query solutioncomponent to find the related solutionid
 						foreach (var paObject in paObjects.Entities)
 						{
 							var clientDataRaw = paObject.Contains("clientdata") ? paObject["clientdata"].ToString() : string.Empty;
-
 							var clientDataJson = clientDataRaw.Replace("\\u0022", "\"");
 
 							if (SearchFlowDefinition(clientDataJson, searchText))
 							{
-								paSearchResults.Add(paObject);
+								// Query solutioncomponent for solutionid based on the workflowid
+								Guid workflowId = paObject.GetAttributeValue<Guid>("workflowid");
+
+								QueryExpression solutionComponentQuery = new QueryExpression("solutioncomponent")
+								{
+									ColumnSet = new ColumnSet("solutionid", "componenttype"),
+									Criteria = new FilterExpression()
+									{
+										Conditions =
+								{
+									new ConditionExpression("objectid", ConditionOperator.Equal, workflowId),
+									new ConditionExpression("componenttype", ConditionOperator.Equal, 29) // 29 is the componenttype for workflows
+                                }
+									}
+								};
+
+								// Retrieve solution component
+								EntityCollection solutionComponents = Service.RetrieveMultiple(solutionComponentQuery);
+
+								// If a solution component is found, add the solutionid to the workflow result
+								if (solutionComponents.Entities.Count > 0)
+								{
+									var solutionComponent = solutionComponents.Entities.FirstOrDefault();
+
+									// Check if the solutionid is a lookup and retrieve the Id
+									if (solutionComponent.Contains("solutionid"))
+									{
+										var solutionIdLookup = solutionComponent.GetAttributeValue<EntityReference>("solutionid");
+										if (solutionIdLookup != null)
+										{
+											Guid solutionId = solutionIdLookup.Id; // Get the solution Id
+											paObject["solutionid"] = solutionId; // Add solutionid to the paObject
+
+											// Now query the solutions entity for additional details
+											QueryExpression solutionQuery = new QueryExpression("solution")
+											{
+												ColumnSet = new ColumnSet("solutionid", "friendlyname"), // Specify the columns you want to retrieve
+												Criteria = new FilterExpression()
+												{
+													Conditions =
+											{
+												new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId)
+											}
+												}
+											};
+
+											// Retrieve solution details
+											EntityCollection solutions = Service.RetrieveMultiple(solutionQuery);
+
+											// If a solution is found, add the friendlyname to the paObject
+											if (solutions.Entities.Count > 0)
+											{
+												var solution = solutions.Entities.FirstOrDefault();
+												if (solution.Contains("friendlyname"))
+												{
+													paObject["solutionname"] = solution["friendlyname"].ToString(); 
+												}
+											}
+										}
+									}
+								}
+
+								paSearchResults.Add(paObject); 
 							}
 						}
 
@@ -153,8 +225,10 @@ namespace paSearch
 						{
 							var name = paObject.Contains("name") ? paObject["name"].ToString() : string.Empty;
 							var solutionId = paObject.Contains("solutionid") ? paObject["solutionid"].ToString() : string.Empty;
+							var solutionName = paObject.Contains("solutionname") ? paObject["solutionname"].ToString() : string.Empty;
 
 							var listViewItem = new ListViewItem(name);
+							listViewItem.SubItems.Add(solutionName); 
 							listViewItem.SubItems.Add(solutionId);
 							resultTextBox.Items.Add(listViewItem);
 						}
@@ -162,6 +236,9 @@ namespace paSearch
 				}
 			});
 		}
+
+
+
 
 		private bool SearchFlowDefinition(string clientDataJson, string searchTerm)
 		{

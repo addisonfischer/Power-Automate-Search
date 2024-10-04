@@ -34,8 +34,9 @@
 			this.searchButton = new System.Windows.Forms.Button();
 			this.resultTextBox = new System.Windows.Forms.ListView();
 			this.Name = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
-			this.SolutionID = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+			this.SolutionName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
 			this.comboBox1 = new System.Windows.Forms.ComboBox();
+			this.SolutionID = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
 			this.toolStripMenu.SuspendLayout();
 			this.SuspendLayout();
 			// 
@@ -77,13 +78,14 @@
 			// 
 			this.resultTextBox.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
 	new System.Windows.Forms.ColumnHeader() { Text = "Name", Width = 500 },
+	new System.Windows.Forms.ColumnHeader() { Text = "SolutionName", Width = 450 },
 	new System.Windows.Forms.ColumnHeader() { Text = "SolutionId", Width = 250 }
 });
 			this.resultTextBox.HideSelection = false;
 			this.resultTextBox.Location = new System.Drawing.Point(4, 56);
 			this.resultTextBox.MultiSelect = false;
 			this.resultTextBox.Name = "resultTextBox";
-			this.resultTextBox.Size = new System.Drawing.Size(1200, 800);
+			this.resultTextBox.Size = new System.Drawing.Size(1200, 1000);
 			this.resultTextBox.TabIndex = 7;
 			this.resultTextBox.UseCompatibleStateImageBehavior = false;
 			this.resultTextBox.DoubleClick += new System.EventHandler(this.resultTextBox_DoubleClick);
@@ -94,10 +96,10 @@
 			this.Name.DisplayIndex = 0;
 			this.Name.Width = 250;
 			// 
-			// SolutionID
+			// SolutionName
 			// 
-			this.SolutionID.DisplayIndex = 1;
-			this.SolutionID.Width = 250;
+			this.SolutionName.DisplayIndex = 1;
+			this.SolutionName.Width = 250;
 			// 
 			// comboBox1
 			// 
@@ -117,6 +119,10 @@
 			this.comboBox1.Size = new System.Drawing.Size(121, 21);
 			this.comboBox1.TabIndex = 8;
 			this.comboBox1.SelectedIndexChanged += new System.EventHandler(this.comboBox1_SelectedIndexChanged);
+			// 
+			// SolutionID
+			// 
+			this.SolutionID.Width = 250;
 			// 
 			// MyPluginControl
 			// 
@@ -144,7 +150,8 @@
 		private System.Windows.Forms.Button searchButton;
 		private System.Windows.Forms.ListView resultTextBox;
 		private System.Windows.Forms.ColumnHeader Name;
-		private System.Windows.Forms.ColumnHeader SolutionID;
+		private System.Windows.Forms.ColumnHeader SolutionName;
 		private System.Windows.Forms.ComboBox comboBox1;
+		private System.Windows.Forms.ColumnHeader SolutionID;
 	}
 }

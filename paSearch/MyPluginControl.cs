@@ -1,4 +1,4 @@
-﻿using McTools.Xrm.Connection;
+using McTools.Xrm.Connection;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using System;
@@ -10,331 +10,335 @@ using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Tooling.Connector;
 using Microsoft.Xrm.Sdk.Discovery;
 using Microsoft.Crm.Sdk.Messages;
+using Newtonsoft.Json.Linq;
 using System.Linq;
 
 namespace paSearch
 {
-	public partial class MyPluginControl : PluginControlBase
-	{
-		private Settings mySettings;
-		public int selectedCategory;
 
-		public MyPluginControl()
-		{
-			InitializeComponent();
-		}
+    public partial class MyPluginControl : PluginControlBase
+    {
+        private Settings mySettings;
+        public int selectedCategory;
+        private string currentEnvironmentId;
 
-		private void MyPluginControl_Load(object sender, EventArgs e)
-		{
-			ShowInfoNotification("Please feel free to check out the repo and suggest features or contribute!", new Uri("https://github.com/addisonfischer/Power-Automate-Search"));
+        public MyPluginControl()
+        {
+            InitializeComponent();
+            this.Dock = DockStyle.Fill;
+        }
 
-			if (!SettingsManager.Instance.TryLoad(GetType(), out mySettings))
-			{
-				mySettings = new Settings();
+        private void MyPluginControl_Load(object sender, EventArgs e)
+        {
+            ExecuteMethod(WhoAmI);
+            ShowInfoNotification("Please feel free to check out the repo and suggest features or contribute!", new Uri("https://github.com/addisonfischer/Power-Automate-Search"));
 
-				LogWarning("Settings not found => a new settings file has been created!");
-			}
-			else
-			{
-				LogInfo("Settings found and loaded");
-			}
+            if (!SettingsManager.Instance.TryLoad(GetType(), out mySettings))
+            {
+                mySettings = new Settings();
+                LogWarning("Settings not found => a new settings file has been created!");
+            }
+            else
+            {
+                LogInfo("Settings found and loaded");
+            }
 
-			comboBox1.SelectedItem = "All";
-		}
+            comboBox1.SelectedItem = "All";
+        }
+        private void WhoAmI()
+        {
+            Service.Execute(new WhoAmIRequest());
+        }
 
-		/// <summary>
-		/// This event occurs when the plugin is closed
-		/// </summary>
-		/// <param name="sender"></param>
-		/// <param name="e"></param>
-		private void MyPluginControl_OnCloseTool(object sender, EventArgs e)
-		{
-			// Before leaving, save the settings
-			SettingsManager.Instance.Save(GetType(), mySettings);
-		}
+        private void MyPluginControl_OnCloseTool(object sender, EventArgs e)
+        {
+            SettingsManager.Instance.Save(GetType(), mySettings);
+        }
 
-		/// <summary>
-		/// This event occurs when the connection has been updated in XrmToolBox
-		/// </summary>
-		public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
-		{
-			base.UpdateConnection(newService, detail, actionName, parameter);
+        public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
+        {
+            base.UpdateConnection(newService, detail, actionName, parameter);
 
-			if (mySettings != null && detail != null)
-			{
-				mySettings.LastUsedOrganizationWebappUrl = detail.WebApplicationUrl;
-				LogInfo("Connection has changed to: {0}", detail.WebApplicationUrl);
-			}
-		}
+            if (mySettings != null && detail != null)
+            {
+                mySettings.LastUsedOrganizationWebappUrl = detail.WebApplicationUrl;
 
-		private string searchText = string.Empty;
+                // ✅ Extract environment ID from URL if EnvironmentId is null
+                if (!string.IsNullOrWhiteSpace(detail.EnvironmentId))
+                {
+                    currentEnvironmentId = detail.EnvironmentId?.ToString().Trim('{', '}');
+                }
+                else
+                {
+                    var url = detail.WebApplicationUrl;
+                    var match = System.Text.RegularExpressions.Regex.Match(url, @"https:\/\/([a-f0-9\-]+)\.crm");
 
-		private void searchTextBox_TextChanged(object sender, EventArgs e)
-		{
-			searchText = searchTextBox.Text.Trim();
-		}
+                    if (match.Success)
+                    {
+                        currentEnvironmentId = match.Groups[1].Value;
+                        LogInfo($"Extracted Environment ID from URL: {currentEnvironmentId}");
+                    }
+                    else
+                    {
+                        LogError("Failed to extract environment ID from WebApplicationUrl.");
+                    }
+                }
 
-		private void searchTextBox_KeyDown(object sender, KeyEventArgs e)
-		{
-			if (e.KeyCode == Keys.Enter)
-			{
-				e.SuppressKeyPress = true; 
-				searchButton.PerformClick(); 
-			}
-		}
+                LogInfo($"Connection updated. EnvironmentId: {currentEnvironmentId}, WebAppUrl: {detail.WebApplicationUrl}");
+            }
+        }
 
-		private void searchButton_Click(object sender, EventArgs e)
-		{
-			paSearchFunction(searchText, selectedCategory);
-		}
+        private string searchText = string.Empty;
 
-		private void resultsTextBox_TextChanged(object sender, EventArgs e)
-		{
+        private void searchTextBox_TextChanged(object sender, EventArgs e)
+        {
+            searchText = searchTextBox.Text.Trim();
+        }
 
-		}
+        private void searchTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            ExecuteMethod(WhoAmI);
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                searchButton.PerformClick();
+            }
+        }
 
-		public class CombinedResult
-		{
-			public string WorkflowName { get; set; }
-			public string WorkflowId { get; set; }
-			public string SolutionId { get; set; }
-			public string SolutionFriendlyName { get; set; }
-		}
+        private void searchButton_Click(object sender, EventArgs e)
+        {
+            paSearchFunction(searchText, selectedCategory);
+        }
 
-		private void paSearchFunction(string searchText, int selectedCategory)
-		{
-			WorkAsync(new WorkAsyncInfo
-			{
-				Message = "Searching all those Power Automate objects....",
+        private void resultsTextBox_TextChanged(object sender, EventArgs e)
+        {
+        }
 
-				Work = (worker, args) =>
-				{
-					try
-					{
-						var paSearchResults = new List<Entity>(); // List to store the search results
+        public class CombinedResult
+        {
+            public string WorkflowName { get; set; }
+            public string WorkflowId { get; set; }
+            public string SolutionId { get; set; }
+            public string SolutionFriendlyName { get; set; }
+        }
 
-						// First Query: Query workflows (Power Automates)
-						QueryExpression workflowQuery = new QueryExpression("workflow")
-						{
-							ColumnSet = new ColumnSet("workflowid", "name", "clientdata"),
-							Criteria = new FilterExpression()
-						};
+        private void paSearchFunction(string searchText, int selectedCategory)
+        {
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Searching all those Power Automate objects....",
+                Work = (worker, args) =>
+                {
+                    try
+                    {
+                        var paSearchResults = new List<Entity>();
 
-						if (selectedCategory != -1)
-						{
-							workflowQuery.Criteria.AddCondition("category", ConditionOperator.Equal, selectedCategory);
-						}
+                        QueryExpression workflowQuery = new QueryExpression("workflow")
+                        {
+                            ColumnSet = new ColumnSet("workflowid", "name", "clientdata"),
+                            Criteria = new FilterExpression()
+                        };
 
-						EntityCollection paObjects = Service.RetrieveMultiple(workflowQuery);
+                        if (selectedCategory != -1)
+                        {
+                            workflowQuery.Criteria.AddCondition("category", ConditionOperator.Equal, selectedCategory);
+                        }
 
-						// For each workflow, query solutioncomponent to find the related solutionid
-						foreach (var paObject in paObjects.Entities)
-						{
-							var clientDataRaw = paObject.Contains("clientdata") ? paObject["clientdata"].ToString() : string.Empty;
-							var clientDataJson = clientDataRaw.Replace("\\u0022", "\"");
+                        EntityCollection paObjects = Service.RetrieveMultiple(workflowQuery);
 
-							if (SearchFlowDefinition(clientDataJson, searchText))
-							{
-								// Query solutioncomponent for solutionid based on the workflowid
-								Guid workflowId = paObject.GetAttributeValue<Guid>("workflowid");
+                        foreach (var paObject in paObjects.Entities)
+                        {
+                            var clientDataRaw = paObject.Contains("clientdata") ? paObject["clientdata"].ToString() : string.Empty;
+                            var clientDataJson = clientDataRaw.Replace("\\u0022", "\"");
 
-								QueryExpression solutionComponentQuery = new QueryExpression("solutioncomponent")
-								{
-									ColumnSet = new ColumnSet("solutionid", "componenttype"),
-									Criteria = new FilterExpression()
-									{
-										Conditions =
-								{
-									new ConditionExpression("objectid", ConditionOperator.Equal, workflowId),
-									new ConditionExpression("componenttype", ConditionOperator.Equal, 29) // 29 is the componenttype for workflows
+                            if (SearchFlowDefinition(clientDataJson.ToLower(), searchText.ToLower()))
+                            {
+                                Guid workflowId = paObject.GetAttributeValue<Guid>("workflowid");
+
+                                QueryExpression solutionComponentQuery = new QueryExpression("solutioncomponent")
+                                {
+                                    ColumnSet = new ColumnSet("solutionid", "componenttype"),
+                                    Criteria = new FilterExpression()
+                                    {
+                                        Conditions =
+                                        {
+                                            new ConditionExpression("objectid", ConditionOperator.Equal, workflowId),
+                                            new ConditionExpression("componenttype", ConditionOperator.Equal, 29)
+                                        }
+                                    }
+                                };
+
+                                EntityCollection solutionComponents = Service.RetrieveMultiple(solutionComponentQuery);
+
+                                if (solutionComponents.Entities.Count > 0)
+                                {
+                                    var solutionComponent = solutionComponents.Entities.FirstOrDefault();
+                                    if (solutionComponent.Contains("solutionid"))
+                                    {
+                                        var solutionIdLookup = solutionComponent.GetAttributeValue<EntityReference>("solutionid");
+                                        if (solutionIdLookup != null)
+                                        {
+                                            Guid solutionId = solutionIdLookup.Id;
+                                            paObject["solutionid"] = solutionId;
+
+                                            QueryExpression solutionQuery = new QueryExpression("solution")
+                                            {
+                                                ColumnSet = new ColumnSet("solutionid", "friendlyname"),
+                                                Criteria = new FilterExpression()
+                                                {
+                                                    Conditions =
+                                                    {
+                                                        new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId)
+                                                    }
+                                                }
+                                            };
+
+                                            EntityCollection solutions = Service.RetrieveMultiple(solutionQuery);
+
+                                            if (solutions.Entities.Count > 0)
+                                            {
+                                                var solution = solutions.Entities.FirstOrDefault();
+                                                if (solution.Contains("friendlyname"))
+                                                {
+                                                    paObject["solutionname"] = solution["friendlyname"].ToString();
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-									}
-								};
 
-								// Retrieve solution component
-								EntityCollection solutionComponents = Service.RetrieveMultiple(solutionComponentQuery);
+                                paSearchResults.Add(paObject);
+                            }
+                        }
 
-								// If a solution component is found, add the solutionid to the workflow result
-								if (solutionComponents.Entities.Count > 0)
-								{
-									var solutionComponent = solutionComponents.Entities.FirstOrDefault();
+                        args.Result = paSearchResults;
+                    }
+                    catch (FaultException<OrganizationServiceFault> ex)
+                    {
+                        MessageBox.Show($"Error: {ex.Detail.Message}\nErrorCode: {ex.Detail.ErrorCode}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        args.Result = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"An unexpected error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        args.Result = null;
+                    }
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    if (args.Result != null)
+                    {
+                        resultTextBox.Items.Clear();
+                        var paSearchResults = (List<Entity>)args.Result;
+                        foreach (var paObject in paSearchResults)
+                        {
+                            var name = paObject.Contains("name") ? paObject["name"].ToString() : string.Empty;
+                            var solutionId = paObject.Contains("solutionid") ? paObject["solutionid"].ToString() : string.Empty;
+                            var solutionName = paObject.Contains("solutionname") ? paObject["solutionname"].ToString() : string.Empty;
 
-									// Check if the solutionid is a lookup and retrieve the Id
-									if (solutionComponent.Contains("solutionid"))
-									{
-										var solutionIdLookup = solutionComponent.GetAttributeValue<EntityReference>("solutionid");
-										if (solutionIdLookup != null)
-										{
-											Guid solutionId = solutionIdLookup.Id; // Get the solution Id
-											paObject["solutionid"] = solutionId; // Add solutionid to the paObject
+                            var listViewItem = new ListViewItem(name);
+                            listViewItem.SubItems.Add(solutionName);
+                            listViewItem.SubItems.Add(solutionId);
+                            resultTextBox.Items.Add(listViewItem);
+                        }
+                    }
+                }
+            });
+        }
 
-											// Now query the solutions entity for additional details
-											QueryExpression solutionQuery = new QueryExpression("solution")
-											{
-												ColumnSet = new ColumnSet("solutionid", "friendlyname"), // Specify the columns you want to retrieve
-												Criteria = new FilterExpression()
-												{
-													Conditions =
-											{
-												new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId)
-											}
-												}
-											};
+        private bool SearchFlowDefinition(string clientDataJson, string searchTerm)
+        {
+            try
+            {
+                var parsed = JObject.Parse(clientDataJson);
+                var allValues = parsed.Descendants()
+                    .OfType<JValue>()
+                    .Select(v => v.ToString().ToLower());
 
-											// Retrieve solution details
-											EntityCollection solutions = Service.RetrieveMultiple(solutionQuery);
+                var terms = searchTerm
+                    .ToLower()
+                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
-											// If a solution is found, add the friendlyname to the paObject
-											if (solutions.Entities.Count > 0)
-											{
-												var solution = solutions.Entities.FirstOrDefault();
-												if (solution.Contains("friendlyname"))
-												{
-													paObject["solutionname"] = solution["friendlyname"].ToString(); 
-												}
-											}
-										}
-									}
-								}
+                return terms.All(term => allValues.Any(v => v.Contains(term)));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"JSON parse/search failed: {ex.Message}");
+                return false;
+            }
+        }
 
-								paSearchResults.Add(paObject); 
-							}
-						}
+        private string GetEnvironmentId()
+        {
+            try
+            {
+                var crmServiceClient = Service as CrmServiceClient;
+                if (crmServiceClient == null)
+                {
+                    LogError("Service is not a CrmServiceClient.");
+                    return string.Empty;
+                }
 
-						args.Result = paSearchResults;
-					}
-					catch (FaultException<OrganizationServiceFault> ex)
-					{
-						MessageBox.Show($"Error: {ex.Detail.Message}\nErrorCode: {ex.Detail.ErrorCode}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-						args.Result = null;
-					}
-					catch (Exception ex)
-					{
-						MessageBox.Show($"An unexpected error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-						args.Result = null;
-					}
-				},
+                WhoAmIRequest request = new WhoAmIRequest();
+                WhoAmIResponse response = (WhoAmIResponse)crmServiceClient.Execute(request);
 
-				PostWorkCallBack = (args) =>
-				{
-					if (args.Result != null)
-					{
-						resultTextBox.Items.Clear(); // Clear existing items
-						var paSearchResults = (List<Entity>)args.Result;
-						foreach (var paObject in paSearchResults)
-						{
-							var name = paObject.Contains("name") ? paObject["name"].ToString() : string.Empty;
-							var solutionId = paObject.Contains("solutionid") ? paObject["solutionid"].ToString() : string.Empty;
-							var solutionName = paObject.Contains("solutionname") ? paObject["solutionname"].ToString() : string.Empty;
+                Guid environmentGuid = response.OrganizationId;
+                string environmentId = environmentGuid.ToString();
+                LogInfo($"Retrieved Environment ID: {environmentId}");
+                return environmentId;
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to retrieve Environment ID: {ex.Message}");
+                return string.Empty;
+            }
+        }
 
-							var listViewItem = new ListViewItem(name);
-							listViewItem.SubItems.Add(solutionName); 
-							listViewItem.SubItems.Add(solutionId);
-							resultTextBox.Items.Add(listViewItem);
-						}
-					}
-				}
-			});
-		}
+        private void resultTextBox_DoubleClick(object sender, EventArgs e)
+        {
+            if (resultTextBox.SelectedItems.Count > 0)
+            {
+                ListViewItem item = resultTextBox.SelectedItems[0];
+                string solutionId = item.SubItems[2].Text;
 
+                if (string.IsNullOrEmpty(solutionId))
+                {
+                    MessageBox.Show("No Solution ID found", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
 
+                try
+                {
+                    Clipboard.SetText(solutionId);
+                    MessageBox.Show($"Solution ID containing object copied to clipboard: \"{solutionId}\".", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
 
+        private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            Dictionary<string, int> valueMapping = new Dictionary<string, int>
+            {
+                { "All", -1 },
+                { "Workflow", 0 },
+                { "Dialog", 1 },
+                { "Business Rule", 2 },
+                { "Action", 3 },
+                { "Business Process", 4 },
+                { "Modern/Cloud", 5 },
+                { "Desktop", 6 },
+                { "AI", 7 }
+            };
 
-		private bool SearchFlowDefinition(string clientDataJson, string searchTerm)
-		{
-			return clientDataJson.IndexOf(searchTerm.Replace(' ', '_'), StringComparison.OrdinalIgnoreCase) >= 0;
-		}
-
-		// Function to get the CRM URL dynamically
-		private string GetEnvironmentId()
-		{
-			var crmServiceClient = (CrmServiceClient)Service;
-			// Create the WhoAmI request
-			WhoAmIRequest request = new WhoAmIRequest();
-
-			// Execute the request
-			WhoAmIResponse response = (WhoAmIResponse)crmServiceClient.Execute(request);
-
-			// Extract the OrganizationId (Environment GUID)
-			Guid environmentGuid = response.OrganizationId;
-			return environmentGuid.ToString();
-		}
-
-		// Handle the DoubleClick event to open the URL
-		private void resultTextBox_DoubleClick_TODO(object sender, EventArgs e)
-		{
-			if (resultTextBox.SelectedItems.Count > 0)
-			{
-				ListViewItem item = resultTextBox.SelectedItems[0]; // Access the first selected item
-				string solutionId = item.SubItems[1].Text; // Assuming the second column contains the SolutionId (GUID)
-				string paUrl = GetEnvironmentId(); // Get the CRM URL dynamically
-				string url = $"https://make.powerapps.com/{paUrl}/solutions/{solutionId}"; // Construct the URL
-
-				// Log the URL for debugging
-				Console.WriteLine($"URL: {url}");
-
-				try
-				{
-					// Validate the URL
-					Uri uriResult;
-					bool isValidUrl = Uri.TryCreate(url, UriKind.Absolute, out uriResult) &&
-									  (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
-
-					if (isValidUrl)
-					{
-						System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-						{
-							FileName = url,
-							UseShellExecute = true
-						});
-					}
-					else
-					{
-						MessageBox.Show($"The constructed URL is not valid: {url}");
-					}
-				}
-				catch (Exception ex)
-				{
-					MessageBox.Show($"An error occurred: {ex.Message}");
-				}
-			}
-		}
-
-		private void resultTextBox_DoubleClick(object sender, EventArgs e)
-		{
-			if (resultTextBox.SelectedItems.Count > 0)
-			{
-				ListViewItem item = resultTextBox.SelectedItems[0]; 
-				string objectName = item.SubItems[0].Text; 
-
-				Clipboard.SetText(objectName);
-
-				MessageBox.Show($"Object Name {objectName} copied to clipboard.");
-			}
-		}
-
-		private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			Dictionary<string, int> valueMapping = new Dictionary<string, int>
-			{
-				{ "All", -1 },
-				{ "Workflow", 0 },
-				{ "Dialog", 1 },
-				{ "Business Rule", 2 },
-				{ "Action", 3 },
-				{ "Business Process", 4 },
-				{ "Modern/Cloud", 5 },
-				{ "Desktop", 6 },
-				{ "AI", 7 }
-			};
-
-			string selectedLabel = comboBox1.SelectedItem.ToString();
-
-			if (valueMapping.ContainsKey(selectedLabel))
-			{
-				selectedCategory = valueMapping[selectedLabel];
-
-			}
-		}
-	}
+            string selectedLabel = comboBox1.SelectedItem.ToString();
+            if (valueMapping.ContainsKey(selectedLabel))
+            {
+                selectedCategory = valueMapping[selectedLabel];
+            }
+        }
+    }
 }

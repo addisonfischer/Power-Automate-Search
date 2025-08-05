@@ -1,4 +1,6 @@
-﻿namespace paSearch
+using System.Windows.Forms;
+
+namespace paSearch
 {
 	partial class MyPluginControl
 	{
@@ -10,7 +12,7 @@
 		/// <summary> 
 		/// Nettoyage des ressources utilisées.
 		/// </summary>
-		/// <param name="disposing">true si les ressources managées doivent être supprimées ; sinon, false.</param>
+		/// <param name="disposing">true si les ressources managées doivent être supprimées ; sinon, false.</param>
 		protected override void Dispose(bool disposing)
 		{
 			if (disposing && (components != null))
@@ -58,6 +60,7 @@
 			// 
 			// searchTextBox
 			// 
+			this.searchTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Left;
 			this.searchTextBox.Location = new System.Drawing.Point(4, 29);
 			this.searchTextBox.Name = "searchTextBox";
 			this.searchTextBox.Size = new System.Drawing.Size(279, 20);
@@ -73,6 +76,7 @@
 			this.searchButton.Text = "Search";
 			this.searchButton.UseVisualStyleBackColor = true;
 			this.searchButton.Click += new System.EventHandler(this.searchButton_Click);
+			this.searchButton.Anchor = AnchorStyles.Top | AnchorStyles.Left;
 			// 
 			// resultTextBox
 			// 
@@ -82,10 +86,11 @@
 	new System.Windows.Forms.ColumnHeader() { Text = "SolutionId", Width = 250 }
 });
 			this.resultTextBox.HideSelection = false;
-			this.resultTextBox.Location = new System.Drawing.Point(4, 56);
 			this.resultTextBox.MultiSelect = false;
 			this.resultTextBox.Name = "resultTextBox";
-			this.resultTextBox.Size = new System.Drawing.Size(1200, 1000);
+			this.resultTextBox.Location = new System.Drawing.Point(0, 60);
+			this.resultTextBox.Size = new System.Drawing.Size(1199, 492);
+			this.resultTextBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 			this.resultTextBox.TabIndex = 7;
 			this.resultTextBox.UseCompatibleStateImageBehavior = false;
 			this.resultTextBox.DoubleClick += new System.EventHandler(this.resultTextBox_DoubleClick);
@@ -103,6 +108,7 @@
 			// 
 			// comboBox1
 			// 
+			this.comboBox1.Anchor = AnchorStyles.Top | AnchorStyles.Left;
 			this.comboBox1.FormattingEnabled = true;
 			this.comboBox1.Items.AddRange(new object[] {
             "All",
@@ -129,10 +135,10 @@
 			this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
 			this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 			this.Controls.Add(this.comboBox1);
-			this.Controls.Add(this.resultTextBox);
 			this.Controls.Add(this.searchButton);
 			this.Controls.Add(this.searchTextBox);
 			this.Controls.Add(this.toolStripMenu);
+			this.Controls.Add(this.resultTextBox);
 			//this.Name = "MyPluginControl";
 			this.Size = new System.Drawing.Size(1199, 552);
 			this.Load += new System.EventHandler(this.MyPluginControl_Load);
@@ -140,7 +146,6 @@
 			this.toolStripMenu.PerformLayout();
 			this.ResumeLayout(false);
 			this.PerformLayout();
-
 		}
 
 		#endregion

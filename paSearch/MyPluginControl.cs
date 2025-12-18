@@ -23,10 +23,12 @@ namespace paSearch
         #region Constants
         private const int COMPONENT_TYPE_WORKFLOW = 29;
         private const int COMPONENT_TYPE_WEBRESOURCE = 61;
+        private const int COMPONENT_TYPE_PLUGINTYPE = 90;
         private const int SEARCH_TIMEOUT_SECONDS = 300;
         
         // Search type identifiers
         private const int SEARCH_TYPE_WEBRESOURCE = -2;
+        private const int SEARCH_TYPE_PLUGIN = -3;
         
         // Performance settings
         private const int DEFAULT_MAX_RESULTS = 500;
@@ -48,6 +50,9 @@ namespace paSearch
         
         // WebResource search settings
         private bool searchWebResourceContent = false; // Default: name search only (FAST)
+        
+        // Plugin code search settings
+        private bool searchPluginCode = false; // Default: metadata only (FAST)
         #endregion
 
         // Static category mapping to avoid recreation
@@ -62,7 +67,8 @@ namespace paSearch
             { "Modern/Cloud", 5 },
             { "Desktop", 6 },
             { "AI", 7 },
-            { "Web Resource", SEARCH_TYPE_WEBRESOURCE }
+            { "Web Resource", SEARCH_TYPE_WEBRESOURCE },
+            { "Plugin", SEARCH_TYPE_PLUGIN }
         };
 
         #region Initialization
@@ -108,12 +114,27 @@ namespace paSearch
                 }
                 useFuzzySearch = mySettings.UseFuzzySearch;
                 fuzzyThreshold = mySettings.FuzzyThreshold;
+                searchPluginCode = mySettings.EnablePluginCodeSearch;
                 
                 // Update UI if fuzzy checkbox exists
                 if (fuzzySearchCheckBox != null)
                 {
                     fuzzySearchCheckBox.Checked = useFuzzySearch;
                 }
+                
+                // Update UI if plugin code search checkbox exists
+                if (pluginCodeSearchCheckBox != null)
+                {
+                    pluginCodeSearchCheckBox.Checked = searchPluginCode;
+                    pluginCodeSearchCheckBox.Visible = false; // Hidden until Plugin category selected
+                }
+            }
+
+            // Ensure combobox always has a default selection
+            if (comboBox1.SelectedItem == null)
+            {
+                comboBox1.SelectedItem = "All";
+                selectedCategory = -1;
             }
 
             UpdateControlsState();
@@ -130,6 +151,7 @@ namespace paSearch
             mySettings.MaxSearchResults = maxResults;
             mySettings.UseFuzzySearch = useFuzzySearch;
             mySettings.FuzzyThreshold = fuzzyThreshold;
+            mySettings.EnablePluginCodeSearch = searchPluginCode;
             
             SettingsManager.Instance.Save(GetType(), mySettings);
         }
@@ -229,6 +251,10 @@ namespace paSearch
             if (selectedCategory == SEARCH_TYPE_WEBRESOURCE)
             {
                 PerformWebResourceSearch(searchText);
+            }
+            else if (selectedCategory == SEARCH_TYPE_PLUGIN)
+            {
+                PerformPluginSearch(searchText);
             }
             else
             {
@@ -686,6 +712,419 @@ namespace paSearch
                 }
             });
         }
+        
+        private void PerformPluginSearch(string searchTerm)
+        {
+            var startTime = DateTime.Now;
+            
+            WorkAsync(new WorkAsyncInfo
+            {
+                Message = "Searching Plugins...",
+                Work = (worker, args) =>
+                {
+                    try
+                    {
+                        var pluginResults = new List<Entity>();
+                        var decompilationService = new PluginDecompilationService();
+                        
+                        // Query plugin types with registration steps
+                        QueryExpression pluginQuery = new QueryExpression("plugintype")
+                        {
+                            ColumnSet = new ColumnSet("plugintypeid", "typename", "friendlyname", "assemblyname", "pluginassemblyid"),
+                            Criteria = new FilterExpression()
+                        };
+                        
+                        // Link to get assembly information
+                        var assemblyLink = pluginQuery.AddLink(
+                            "pluginassembly",
+                            "pluginassemblyid",
+                            "pluginassemblyid",
+                            JoinOperator.LeftOuter);
+                        assemblyLink.Columns = new ColumnSet("name", "version");
+                        assemblyLink.EntityAlias = "assembly";
+                        
+                        // Link to get registration steps (for filtering and metadata)
+                        var stepLink = pluginQuery.AddLink(
+                            "sdkmessageprocessingstep",
+                            "plugintypeid",
+                            "plugintypeid",
+                            JoinOperator.LeftOuter);
+                        stepLink.Columns = new ColumnSet("name", "description", "stage", "mode");
+                        stepLink.EntityAlias = "step";
+                        
+                        // Link to get message information
+                        var messageLink = stepLink.AddLink(
+                            "sdkmessage",
+                            "sdkmessageid",
+                            "sdkmessageid",
+                            JoinOperator.LeftOuter);
+                        messageLink.Columns = new ColumnSet("name");
+                        messageLink.EntityAlias = "message";
+                        
+                        // Link to get filter (entity) information
+                        var filterLink = stepLink.AddLink(
+                            "sdkmessagefilter",
+                            "sdkmessagefilterid",
+                            "sdkmessagefilterid",
+                            JoinOperator.LeftOuter);
+                        filterLink.Columns = new ColumnSet("primaryobjecttypecode");
+                        filterLink.EntityAlias = "filter";
+
+                        EntityCollection plugins = Service.RetrieveMultiple(pluginQuery);
+                        
+                        worker.ReportProgress(0, $"Processing {plugins.Entities.Count} plugin registrations...");
+
+                        int processed = 0;
+                        int matchCount = 0;
+                        
+                        // Group by plugintypeid to deduplicate (a plugin can have multiple steps)
+                        var pluginGroups = plugins.Entities
+                            .GroupBy(p => p.GetAttributeValue<Guid>("plugintypeid"))
+                            .Select(g => new
+                            {
+                                PluginType = g.First(),
+                                Steps = g.ToList()
+                            })
+                            .ToList();
+                        
+                        foreach (var pluginGroup in pluginGroups)
+                        {
+                            if (worker.CancellationPending)
+                            {
+                                args.Cancel = true;
+                                return;
+                            }
+                            
+                            processed++;
+                            
+                            if (processed % PROGRESS_UPDATE_INTERVAL == 0)
+                            {
+                                worker.ReportProgress(
+                                    (int)((processed * 100.0) / pluginGroups.Count), 
+                                    $"Processed {processed}/{pluginGroups.Count} | Found {matchCount} matches");
+                            }
+
+                            var plugin = pluginGroup.PluginType;
+                            
+                            var typeName = plugin.Contains("typename") 
+                                ? plugin["typename"].ToString() 
+                                : string.Empty;
+                            var friendlyName = plugin.Contains("friendlyname") 
+                                ? plugin["friendlyname"].ToString() 
+                                : string.Empty;
+                            var assemblyName = plugin.Contains("assemblyname") 
+                                ? plugin["assemblyname"].ToString() 
+                                : string.Empty;
+
+                            // Get assembly details from alias
+                            var fullAssemblyName = plugin.Contains("assembly.name") 
+                                ? plugin.GetAttributeValue<AliasedValue>("assembly.name").Value.ToString()
+                                : assemblyName;
+
+                            bool matchFound = false;
+
+                            if (string.IsNullOrWhiteSpace(searchTerm))
+                            {
+                                matchFound = true;
+                            }
+                            else
+                            {
+                                // Search in plugin metadata
+                                if (MatchesSearchTerm(typeName, searchTerm) ||
+                                    MatchesSearchTerm(friendlyName, searchTerm) ||
+                                    MatchesSearchTerm(assemblyName, searchTerm) ||
+                                    MatchesSearchTerm(fullAssemblyName, searchTerm))
+                                {
+                                    matchFound = true;
+                                }
+                                else
+                                {
+                                    // Search in registration metadata (messages, entities, step names)
+                                    foreach (var step in pluginGroup.Steps)
+                                    {
+                                        var stepName = step.Contains("step.name")
+                                            ? step.GetAttributeValue<AliasedValue>("step.name")?.Value?.ToString() ?? string.Empty
+                                            : string.Empty;
+                                        
+                                        var messageName = step.Contains("message.name")
+                                            ? step.GetAttributeValue<AliasedValue>("message.name")?.Value?.ToString() ?? string.Empty
+                                            : string.Empty;
+                                        
+                                        var entityName = step.Contains("filter.primaryobjecttypecode")
+                                            ? step.GetAttributeValue<AliasedValue>("filter.primaryobjecttypecode")?.Value?.ToString() ?? string.Empty
+                                            : string.Empty;
+
+                                        if (MatchesSearchTerm(stepName, searchTerm) ||
+                                            MatchesSearchTerm(messageName, searchTerm) ||
+                                            MatchesSearchTerm(entityName, searchTerm))
+                                        {
+                                            matchFound = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // CODE SEARCH: If metadata didn't match but code search is enabled, try decompiling and searching
+                            if (!matchFound && searchPluginCode && !string.IsNullOrWhiteSpace(searchTerm))
+                            {
+                                try
+                                {
+                                    // Get the plugin type ID to retrieve the assembly reference
+                                    var pluginTypeId = plugin.GetAttributeValue<Guid>("plugintypeid");
+                                    
+                                    // Retrieve the plugintype record to get the pluginassemblyid lookup
+                                    var pluginTypeRecord = Service.Retrieve("plugintype", pluginTypeId, new ColumnSet("pluginassemblyid"));
+                                    
+                                    // Get the assembly reference
+                                    var assemblyReference = pluginTypeRecord.GetAttributeValue<EntityReference>("pluginassemblyid");
+                                    
+                                    if (assemblyReference != null && assemblyReference.Id != Guid.Empty)
+                                    {
+                                        var assemblyId = assemblyReference.Id;
+                                        
+                                        worker.ReportProgress(-1, $"Decompiling and searching code for {typeName}...");
+                                        
+                                        // Retrieve assembly content
+                                        var assembly = Service.Retrieve("pluginassembly", assemblyId, new ColumnSet("content", "name"));
+                                        
+                                        if (assembly.Contains("content"))
+                                        {
+                                            var base64Content = assembly["content"].ToString();
+                                            var assemblyBytes = Convert.FromBase64String(base64Content);
+                                            var actualAssemblyName = assembly.Contains("name") ? assembly["name"].ToString() : fullAssemblyName;
+                                            
+                                            // Decompile the assembly
+                                            var decompiledResult = decompilationService.DecompilePlugin(
+                                                assemblyBytes, 
+                                                assemblyId, 
+                                                actualAssemblyName,
+                                                useCache: mySettings.CacheDecompiledCode);
+                                            
+                                            if (decompiledResult.Success)
+                                            {
+                                                // Search in decompiled code
+                                                if (MatchesSearchTerm(decompiledResult.DecompiledCode, searchTerm))
+                                                {
+                                                    matchFound = true;
+                                                    plugin["matchsource"] = "Code Content"; // Tag for user visibility
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // Log decompilation failure but continue
+                                                LogWarning($"Failed to decompile {actualAssemblyName}: {decompiledResult.ErrorMessage}");
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogWarning($"Error during code search for {typeName}: {ex.Message}");
+                                }
+                            }
+
+                            if (matchFound)
+                            {
+                                // Build registration summary for display
+                                var registrations = new List<string>();
+                                foreach (var step in pluginGroup.Steps)
+                                {
+                                    var messageName = step.Contains("message.name")
+                                        ? step.GetAttributeValue<AliasedValue>("message.name")?.Value?.ToString() ?? "Unknown"
+                                        : "Unknown";
+                                    
+                                    var entityName = step.Contains("filter.primaryobjecttypecode")
+                                        ? step.GetAttributeValue<AliasedValue>("filter.primaryobjecttypecode")?.Value?.ToString() ?? "None"
+                                        : "None";
+                                    
+                                    var stage = step.Contains("step.stage")
+                                        ? step.GetAttributeValue<AliasedValue>("step.stage")?.Value?.ToString() ?? ""
+                                        : "";
+                                    
+                                    // Convert stage number to text (C# 7.3 compatible)
+                                    string stageText;
+                                    switch (stage)
+                                    {
+                                        case "10":
+                                            stageText = "PreValidation";
+                                            break;
+                                        case "20":
+                                            stageText = "PreOperation";
+                                            break;
+                                        case "40":
+                                            stageText = "PostOperation";
+                                            break;
+                                        default:
+                                            stageText = "Stage " + stage;
+                                            break;
+                                    }
+                                    
+                                    registrations.Add($"{messageName} on {entityName} ({stageText})");
+                                }
+                                
+                                // Store registration summary as custom attribute
+                                plugin["registrations"] = string.Join("; ", registrations.Take(3)); // Limit to 3 for display
+                                if (registrations.Count > 3)
+                                {
+                                    plugin["registrations"] += $" ... and {registrations.Count - 3} more";
+                                }
+                                
+                                // Store assembly name for display
+                                plugin["displayassembly"] = fullAssemblyName;
+                                
+                                pluginResults.Add(plugin);
+                                matchCount++;
+                                
+                                if (matchCount >= maxResults)
+                                {
+                                    worker.ReportProgress(100, $"Reached maximum of {maxResults} results");
+                                    break;
+                                }
+                            }
+                        }
+
+                        // PERFORMANCE OPTIMIZATION: Batch solution lookup
+                        if (pluginResults.Count > 0)
+                        {
+                            worker.ReportProgress(95, "Looking up solutions...");
+                            var pluginTypeIds = pluginResults.Select(e => e.GetAttributeValue<Guid>("plugintypeid")).ToList();
+                            var solutionMap = GetSolutionsForEntitiesBatch(pluginTypeIds, COMPONENT_TYPE_PLUGINTYPE);
+                            
+                            foreach (var plugin in pluginResults)
+                            {
+                                var pluginTypeId = plugin.GetAttributeValue<Guid>("plugintypeid");
+                                if (solutionMap.ContainsKey(pluginTypeId))
+                                {
+                                    var (solutionId, solutionName) = solutionMap[pluginTypeId];
+                                    plugin["solutionid"] = solutionId;
+                                    plugin["solutionname"] = solutionName;
+                                }
+                            }
+                        }
+
+                        args.Result = new SearchResult
+                        {
+                            Results = pluginResults,
+                            SearchTime = DateTime.Now - startTime,
+                            TotalProcessed = processed,
+                            WasLimited = matchCount >= maxResults
+                        };
+                    }
+                    catch (FaultException<OrganizationServiceFault> ex)
+                    {
+                        args.Result = new SearchResult
+                        {
+                            Error = $"CRM Error: {ex.Detail.Message}\nError Code: {ex.Detail.ErrorCode}"
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        args.Result = new SearchResult
+                        {
+                            Error = $"Unexpected error: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}"
+                        };
+                    }
+                },
+                ProgressChanged = (args) =>
+                {
+                    SetWorkingMessage(args.UserState?.ToString() ?? "Processing...");
+                },
+                PostWorkCallBack = (args) =>
+                {
+                    if (args.Error != null)
+                    {
+                        MessageBox.Show(
+                            $"An error occurred during search:\n\n{args.Error.Message}", 
+                            "Error", 
+                            MessageBoxButtons.OK, 
+                            MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    if (args.Cancelled)
+                    {
+                        LogInfo("Search cancelled by user");
+                        return;
+                    }
+
+                    var searchResult = args.Result as SearchResult;
+                    if (searchResult == null)
+                        return;
+
+                    if (!string.IsNullOrEmpty(searchResult.Error))
+                    {
+                        MessageBox.Show(searchResult.Error, "Search Error", 
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    resultTextBox.Items.Clear();
+                    
+                    foreach (var plugin in searchResult.Results)
+                    {
+                        // Display: Plugin Type Name | Assembly Name | Registrations
+                        var typeName = plugin.Contains("typename") 
+                            ? plugin["typename"].ToString() 
+                            : "[No Type Name]";
+                        
+                        var assemblyName = plugin.Contains("displayassembly")
+                            ? plugin["displayassembly"].ToString()
+                            : plugin.Contains("assemblyname") 
+                                ? plugin["assemblyname"].ToString()
+                                : "[No Assembly]";
+                        
+                        var registrations = plugin.Contains("registrations")
+                            ? plugin["registrations"].ToString()
+                            : "[No Registrations]";
+                        
+                        var solutionName = plugin.Contains("solutionname") 
+                            ? plugin["solutionname"].ToString() 
+                            : "[No Solution]";
+                        
+                        var solutionId = plugin.Contains("solutionid") 
+                            ? plugin["solutionid"].ToString() 
+                            : string.Empty;
+
+                        // Column 1: Type Name + Assembly (combined for readability)
+                        var displayName = $"{typeName} ({assemblyName})";
+                        
+                        var listViewItem = new ListViewItem(displayName);
+                        listViewItem.SubItems.Add(solutionName);
+                        listViewItem.SubItems.Add(solutionId);
+                        
+                        // Store registration info in tooltip or tag
+                        listViewItem.ToolTipText = $"Registrations: {registrations}";
+                        
+                        resultTextBox.Items.Add(listViewItem);
+                    }
+                    
+                    var message = $"Found {searchResult.Results.Count} plugin(s) in {searchResult.SearchTime.TotalSeconds:F2} seconds";
+                    if (searchResult.WasLimited)
+                    {
+                        message += $" (limited to {maxResults} results)";
+                    }
+                    LogInfo(message);
+                    
+                    if (searchResult.Results.Count == 0)
+                    {
+                        MessageBox.Show(
+                            "No plugins found matching your search criteria.",
+                            "No Results",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                    else if (searchResult.WasLimited)
+                    {
+                        MessageBox.Show(
+                            $"Search limited to first {maxResults} matches.\n\nTip: Use a more specific search term for better results.",
+                            "Results Limited",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                }
+            });
+        }
         #endregion
 
         #region Search Helper Methods
@@ -993,6 +1432,18 @@ namespace paSearch
                 {
                     categoryTipLabel.Visible = (selectedLabel == "All");
                 }
+                
+                // Show/hide plugin code search checkbox based on category
+                if (pluginCodeSearchCheckBox != null)
+                {
+                    pluginCodeSearchCheckBox.Visible = (selectedCategory == SEARCH_TYPE_PLUGIN);
+                }
+                
+                // Hide web resource content search when not on web resource
+                if (searchContentCheckBox != null)
+                {
+                    searchContentCheckBox.Visible = (selectedCategory == SEARCH_TYPE_WEBRESOURCE || selectedLabel == "All");
+                }
             }
         }
         
@@ -1006,6 +1457,35 @@ namespace paSearch
         {
             searchWebResourceContent = searchContentCheckBox.Checked;
             LogInfo($"WebResource content search {(searchWebResourceContent ? "enabled" : "disabled")}");
+        }
+        
+        private void pluginCodeSearchCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            searchPluginCode = pluginCodeSearchCheckBox.Checked;
+            
+            // Show warning on first use
+            if (searchPluginCode && !mySettings.PluginCodeSearchWarningShown)
+            {
+                var result = MessageBox.Show(
+                    "Plugin code search decompiles assemblies which can take 30-120 seconds (or longer) on first use.\n\n" +
+                    "Results are cached for this session to improve subsequent searches.\n\n" +
+                    "Note: This will not work with obfuscated code.\n\n" +
+                    "Continue?",
+                    "Performance Warning",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                
+                if (result == DialogResult.No)
+                {
+                    pluginCodeSearchCheckBox.Checked = false;
+                    searchPluginCode = false;
+                    return;
+                }
+                
+                mySettings.PluginCodeSearchWarningShown = true;
+            }
+            
+            LogInfo($"Plugin code search {(searchPluginCode ? "enabled" : "disabled")}");
         }
         #endregion
 

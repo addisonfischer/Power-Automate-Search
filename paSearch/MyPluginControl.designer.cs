@@ -42,6 +42,7 @@ namespace paSearch
             this.categoryTipLabel = new System.Windows.Forms.Label();
             this.fuzzySearchCheckBox = new System.Windows.Forms.CheckBox();
             this.searchContentCheckBox = new System.Windows.Forms.CheckBox();
+            this.pluginCodeSearchCheckBox = new System.Windows.Forms.CheckBox();
             this.toolStripMenu.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -134,7 +135,8 @@ namespace paSearch
             "Modern/Cloud",
             "Desktop",
             "AI",
-            "Web Resource"});
+            "Web Resource",
+            "Plugin"});
             this.comboBox1.Location = new System.Drawing.Point(785, 29);
             this.comboBox1.Name = "comboBox1";
             this.comboBox1.Size = new System.Drawing.Size(160, 21);
@@ -151,7 +153,7 @@ namespace paSearch
             this.categoryTipLabel.Name = "categoryTipLabel";
             this.categoryTipLabel.Size = new System.Drawing.Size(240, 13);
             this.categoryTipLabel.TabIndex = 9;
-            this.categoryTipLabel.Text = "💡 Tip: Select a category for faster searches";
+            this.categoryTipLabel.Text = "Tip: Select a category for faster searches";
             this.categoryTipLabel.Visible = false;
             // 
             // fuzzySearchCheckBox
@@ -159,7 +161,7 @@ namespace paSearch
             this.fuzzySearchCheckBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.fuzzySearchCheckBox.AutoSize = true;
             this.fuzzySearchCheckBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.fuzzySearchCheckBox.Location = new System.Drawing.Point(900, 10);
+            this.fuzzySearchCheckBox.Location = new System.Drawing.Point(885, 10);
             this.fuzzySearchCheckBox.Name = "fuzzySearchCheckBox";
             this.fuzzySearchCheckBox.Size = new System.Drawing.Size(100, 17);
             this.fuzzySearchCheckBox.TabIndex = 10;
@@ -180,10 +182,25 @@ namespace paSearch
             this.searchContentCheckBox.UseVisualStyleBackColor = true;
             this.searchContentCheckBox.CheckedChanged += new System.EventHandler(this.searchContentCheckBox_CheckedChanged);
             // 
+            // pluginCodeSearchCheckBox
+            // 
+            this.pluginCodeSearchCheckBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.pluginCodeSearchCheckBox.AutoSize = true;
+            this.pluginCodeSearchCheckBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.pluginCodeSearchCheckBox.Location = new System.Drawing.Point(760, 10);
+            this.pluginCodeSearchCheckBox.Name = "pluginCodeSearchCheckBox";
+            this.pluginCodeSearchCheckBox.Size = new System.Drawing.Size(120, 17);
+            this.pluginCodeSearchCheckBox.TabIndex = 12;
+            this.pluginCodeSearchCheckBox.Text = "Search Code (Slow)";
+            this.pluginCodeSearchCheckBox.UseVisualStyleBackColor = true;
+            this.pluginCodeSearchCheckBox.Visible = false;
+            this.pluginCodeSearchCheckBox.CheckedChanged += new System.EventHandler(this.pluginCodeSearchCheckBox_CheckedChanged);
+            // 
             // MyPluginControl
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.Controls.Add(this.pluginCodeSearchCheckBox);
             this.Controls.Add(this.searchContentCheckBox);
             this.Controls.Add(this.fuzzySearchCheckBox);
             this.Controls.Add(this.categoryTipLabel);
@@ -214,5 +231,6 @@ namespace paSearch
         private System.Windows.Forms.Label categoryTipLabel;
         private System.Windows.Forms.CheckBox fuzzySearchCheckBox;
         private System.Windows.Forms.CheckBox searchContentCheckBox;
+        private System.Windows.Forms.CheckBox pluginCodeSearchCheckBox;
     }
 }

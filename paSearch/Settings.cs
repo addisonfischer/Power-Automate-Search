@@ -45,6 +45,21 @@ namespace paSearch
         public int FuzzyThreshold { get; set; } = 2;
 
         /// <summary>
+        /// Whether to enable plugin code search (decompilation)
+        /// </summary>
+        public bool EnablePluginCodeSearch { get; set; } = false;
+
+        /// <summary>
+        /// Whether to cache decompiled plugin code during session
+        /// </summary>
+        public bool CacheDecompiledCode { get; set; } = true;
+
+        /// <summary>
+        /// Whether the user has seen the code search warning
+        /// </summary>
+        public bool PluginCodeSearchWarningShown { get; set; } = false;
+
+        /// <summary>
         /// Default constructor required for XML serialization
         /// </summary>
         public Settings()

@@ -285,11 +285,13 @@
     <Compile Include="MyPluginControl.designer.cs">
       <DependentUpon>MyPluginControl.cs</DependentUpon>
     </Compile>
+    <Compile Include="PluginDecompileService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Settings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="MyPluginControl.resx">
@@ -305,6 +307,9 @@
     </PackageReference>
     <PackageReference Include="FuzzySharp">
       <Version>2.0.2</Version>
+    </PackageReference>
+    <PackageReference Include="ICSharpCode.Decompiler">
+      <Version>8.2.0.7535</Version>
     </PackageReference>
     <PackageReference Include="jacobslusser.ScintillaNET">
       <Version>3.6.3</Version>
